@@ -36,9 +36,6 @@ jobs:
           cd ..
           cp -r open-webui/build www
 
-      - name: Capacitor Sync
-        run: npx cap sync android
-
       - name: Setup Java JDK
         uses: actions/setup-java@v4
         with:
@@ -48,6 +45,11 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+
+      - name: Capacitor Sync
+        run: npx cap sync android
+
+
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
