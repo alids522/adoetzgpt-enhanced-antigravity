@@ -20,6 +20,7 @@
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Plus from '$lib/components/icons/Plus.svelte';
+	import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
 
 	import OpenAIConnection from './Connections/OpenAIConnection.svelte';
 	import AddConnectionModal from '$lib/components/AddConnectionModal.svelte';
@@ -55,7 +56,6 @@
 	let showAddOllamaConnectionModal = false;
 
 	let GEMINI_API_KEY = '';
-	let GEMINI_API_BASE_URL = '';
 
 	const updateOpenAIHandler = async () => {
 		if (ENABLE_OPENAI_API !== null) {
@@ -116,7 +116,7 @@
 	const updateGeminiHandler = async () => {
 		const res = await setGeminiConfig(localStorage.token, {
 			GEMINI_API_KEY: GEMINI_API_KEY,
-			GEMINI_API_BASE_URL: GEMINI_API_BASE_URL
+			GEMINI_API_BASE_URL: ''
 		}).catch((error) => {
 			toast.error(`${error}`);
 		});
@@ -175,7 +175,7 @@
 				(async () => {
 					const geminiConfig = await getGeminiConfig(localStorage.token);
 					GEMINI_API_KEY = geminiConfig.GEMINI_API_KEY;
-					GEMINI_API_BASE_URL = geminiConfig.GEMINI_API_BASE_URL;
+					
 				})()
 			]);
 
@@ -395,29 +395,16 @@
 
 					<div class="flex flex-col gap-1.5">
 						<div class="flex w-full gap-2 text-xs bg-gray-50 dark:bg-gray-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-gray-850">
-							<div class="flex-1">
-								<input
-									class="w-full text-sm bg-transparent outline-hidden"
-									placeholder={$i18n.t('API Base URL')}
-									bind:value={GEMINI_API_BASE_URL}
-									on:blur={() => {
-										updateGeminiHandler();
-									}}
-								/>
-							</div>
-						</div>
-
-						<div class="flex w-full gap-2 text-xs bg-gray-50 dark:bg-gray-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-gray-850">
-							<div class="flex-1">
-								<input
-									class="w-full text-sm bg-transparent outline-hidden"
-									placeholder={$i18n.t('API Key')}
-									bind:value={GEMINI_API_KEY}
-									on:blur={() => {
-										updateGeminiHandler();
-									}}
-								/>
-							</div>
+							<SensitiveInput
+								id="gemini-api-key"
+								bind:value={GEMINI_API_KEY}
+								placeholder={$i18n.t('API Key')}
+								type="password"
+								autocomplete="off"
+								on:blur={() => {
+									updateGeminiHandler();
+								}}
+							/>
 						</div>
 					</div>
 				</div>
