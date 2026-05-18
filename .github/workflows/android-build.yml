@@ -29,19 +29,20 @@ jobs:
 
       - name: Build Frontend from Source
         run: |
-          git clone https://github.com/alids522/open-webui.git
-          cd open-webui
+          cd frontend-source
           npm ci
           npm run build
           cd ..
           mkdir -p www
-          cp -r open-webui/build/* www/
+          cp -r frontend-source/build/* www/
+
+
 
       - name: Setup Java JDK
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '21'
           cache: 'gradle'
 
       - name: Setup Android SDK

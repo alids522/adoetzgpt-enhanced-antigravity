@@ -1,5 +1,4 @@
 node_modules/
-www/
 dist/
 android/app/build/
 android/app/src/main/assets/public/
@@ -9,3 +8,4 @@ local.properties
 .DS_Store
 *.apk
 *.aab
+frontend-source/node_modules

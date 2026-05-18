@@ -1,0 +1,25 @@
+{
+  "name": "adoetzgpt-enhanced",
+  "version": "1.0.0",
+  "description": "Capacitor Android client for AdoetzGPT Enhanced / OpenWebUI.",
+  "main": "index.js",
+  "scripts": {
+    "sync": "cap sync android",
+    "copy": "cap copy android",
+    "build:android:debug": "npm run sync && cd android && ./gradlew assembleDebug",
+    "build:android:release": "npm run sync && cd android && ./gradlew assembleRelease",
+    "bundle:android:release": "npm run sync && cd android && ./gradlew bundleRelease"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "dependencies": {
+    "@capacitor/android": "^8.3.4",
+    "@capacitor/cli": "^8.3.4",
+    "@capacitor/core": "^8.3.4"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}

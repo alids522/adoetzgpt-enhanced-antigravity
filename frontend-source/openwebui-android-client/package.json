@@ -1,0 +1,22 @@
+{
+  "name": "openwebui-android-client",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@capacitor/android": "^8.3.4",
+    "@capacitor/core": "^8.3.4",
+    "@capawesome-team/capacitor-android-foreground-service": "^8.1.0",
+    "@capgo/capacitor-audio-recorder": "^8.2.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.3.4"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 *)",
+      "Bash(npm run *)",
+      "Bash(npm install *)",
+      "Bash(kill %1)",
+      "Bash(npx svelte-check *)",
+      "Bash(awk '/GeminiLiveOverlay/{skip=1} skip && /{submitPrompt}/{next} skip && /{chatId}/{skip=0} 1' \"/Volumes/NAS-1/root/ai project/openwebui/src/lib/components/chat/ChatControls.svelte\")",
+      "Bash(mv \"/tmp/ChatControls_temp.svelte\" \"/Volumes/NAS-1/root/ai project/openwebui/src/lib/components/chat/ChatControls.svelte\")",
+      "Bash(cat)",
+      "Bash(chmod +x /tmp/move_gemini_handler.sh)",
+      "Bash(/tmp/move_gemini_handler.sh)"
+    ]
+  }
+}

@@ -1,0 +1,57 @@
+name: Android Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # Build SvelteKit Frontend
+      - name: Install dependencies (SvelteKit)
+        run: npm ci
+
+      - name: Build SvelteKit Web App
+        run: npm run build
+
+      # Setup and Build Capacitor App
+      - name: Install Capacitor dependencies
+        working-directory: openwebui-android-client
+        run: npm install
+
+      - name: Sync Capacitor Android
+        working-directory: openwebui-android-client
+        run: npx cap sync android
+
+      - name: Build Android APK
+        working-directory: openwebui-android-client/android
+        run: ./gradlew assembleDebug
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwebui-android-app
+          path: openwebui-android-client/android/app/build/outputs/apk/debug/app-debug.apk

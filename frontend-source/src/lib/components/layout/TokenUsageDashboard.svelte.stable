@@ -1,0 +1,379 @@
+<script lang="ts">
+	import { getContext, onMount } from 'svelte';
+	import {
+		createCustomTokenCounter,
+		deleteCustomTokenCounter,
+		formatTokenCount,
+		initTokenUsageSync,
+		renameCustomTokenCounter,
+		resetCustomTokenCounter,
+		resetTokenUsageRecords,
+		tokenUsageCustomCounters,
+		tokenUsageRecords,
+		type CustomTokenCounter,
+		type TokenUsageRecord
+	} from '$lib/stores/tokenUsage';
+	import { showTokenUsageDashboard } from '$lib/stores';
+
+	const i18n = getContext('i18n') as any;
+
+	type RangeKey = 'today' | '7d' | '24h' | '1h' | 'custom';
+
+	let range: RangeKey = '7d';
+	let customStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+	let customEnd = new Date().toISOString().slice(0, 10);
+	let modelFilter = 'all';
+	let counterFilter = 'all';
+	let newCounterName = '';
+	let editingCounterId: string | null = null;
+	let editingCounterName = '';
+
+	const rangeStart = () => {
+		const now = new Date();
+		if (range === '1h') return now.getTime() - 60 * 60 * 1000;
+		if (range === '24h') return now.getTime() - 24 * 60 * 60 * 1000;
+		if (range === '7d') return now.getTime() - 7 * 24 * 60 * 60 * 1000;
+		if (range === 'today') return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+		return new Date(`${customStart}T00:00:00`).getTime();
+	};
+
+	const rangeEnd = () => {
+		if (range !== 'custom') return Date.now();
+		return new Date(`${customEnd}T23:59:59`).getTime();
+	};
+
+	const counterApplies = (counter: CustomTokenCounter, record: TokenUsageRecord) => {
+		if (counter.resetAt && record.timestamp < counter.resetAt) return false;
+		if (counter.models?.length && !counter.models.includes(record.model)) return false;
+		if (counter.endpoints?.length && !counter.endpoints.includes(record.endpoint)) return false;
+		if (counter.providers?.length && !counter.providers.includes(record.provider)) return false;
+		return true;
+	};
+
+	const filterRecords = (records: TokenUsageRecord[]) => {
+		const start = rangeStart();
+		const end = rangeEnd();
+		const counter =
+			counterFilter === 'all' ? null : $tokenUsageCustomCounters.find((item) => item.id === counterFilter);
+
+		return records.filter((record) => {
+			if (record.timestamp < start || record.timestamp > end) return false;
+			if (modelFilter !== 'all' && record.model !== modelFilter) return false;
+			if (counter && !counterApplies(counter, record)) return false;
+			return true;
+		});
+	};
+
+	const totalsFor = (records: TokenUsageRecord[]) =>
+		records.reduce(
+			(acc, record) => {
+				acc.input += record.inputTokens;
+				acc.output += record.outputTokens;
+				acc.total += record.totalTokens;
+				return acc;
+			},
+			{ input: 0, output: 0, total: 0 }
+		);
+
+	const groupBy = (records: TokenUsageRecord[], key: keyof TokenUsageRecord) => {
+		const groups = new Map<string, { name: string; total: number; input: number; output: number }>();
+		for (const record of records) {
+			const name = String(record[key] ?? 'unknown');
+			const current = groups.get(name) ?? { name, total: 0, input: 0, output: 0 };
+			current.total += record.totalTokens;
+			current.input += record.inputTokens;
+			current.output += record.outputTokens;
+			groups.set(name, current);
+		}
+		return [...groups.values()].sort((a, b) => b.total - a.total);
+	};
+
+	const buildBuckets = (records: TokenUsageRecord[]) => {
+		const bucketCount = range === '1h' ? 12 : range === '24h' || range === 'today' ? 24 : 14;
+		const start = rangeStart();
+		const end = Math.max(rangeEnd(), start + 1);
+		const bucketSize = (end - start) / bucketCount;
+		const buckets = Array.from({ length: bucketCount }, (_, idx) => ({
+			label:
+				range === '1h' || range === '24h' || range === 'today'
+					? new Date(start + idx * bucketSize).toLocaleTimeString([], {
+							hour: '2-digit',
+							minute: '2-digit'
+						})
+					: new Date(start + idx * bucketSize).toLocaleDateString([], {
+							month: 'short',
+							day: 'numeric'
+						}),
+			input: 0,
+			output: 0,
+			total: 0
+		}));
+
+		for (const record of records) {
+			const idx = Math.min(bucketCount - 1, Math.max(0, Math.floor((record.timestamp - start) / bucketSize)));
+			buckets[idx].input += record.inputTokens;
+			buckets[idx].output += record.outputTokens;
+			buckets[idx].total += record.totalTokens;
+		}
+		return buckets;
+	};
+
+	$: models = [...new Set($tokenUsageRecords.map((record) => record.model))].sort();
+	$: filteredRecords = filterRecords($tokenUsageRecords);
+	$: totals = totalsFor(filteredRecords);
+	$: modelGroups = groupBy(filteredRecords, 'model');
+	$: buckets = buildBuckets(filteredRecords);
+	$: maxBucket = Math.max(...buckets.map((bucket) => bucket.total), 1);
+
+	const resetFiltered = () => {
+		const ids = new Set(filteredRecords.map((record) => record.id));
+		resetTokenUsageRecords((record) => ids.has(record.id));
+	};
+
+	const resetModel = () => {
+		if (modelFilter === 'all') return;
+		resetTokenUsageRecords((record) => record.model === modelFilter);
+		modelFilter = 'all';
+	};
+
+	const createCounter = () => {
+		createCustomTokenCounter(newCounterName);
+		newCounterName = '';
+	};
+
+	onMount(() => {
+		void initTokenUsageSync();
+	});
+</script>
+
+<div class="fixed inset-0 z-[1000] flex items-center justify-center bg-gray-950/20 p-2 backdrop-blur-sm">
+	<div
+		class="flex max-h-[92dvh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-gray-200/70 bg-white/95 shadow-2xl dark:border-gray-800/70 dark:bg-gray-950/95"
+	>
+		<div class="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-gray-850">
+			<div>
+				<div class="text-base font-semibold text-gray-900 dark:text-gray-100">{$i18n.t('Token Usage')}</div>
+				<div class="text-xs text-gray-500 dark:text-gray-400">
+					{$i18n.t('Context, model, and custom usage analytics')}
+				</div>
+			</div>
+			<button
+				type="button"
+				class="rounded-full px-3 py-1.5 text-sm text-gray-600 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-900"
+				on:click={() => showTokenUsageDashboard.set(false)}
+			>
+				{$i18n.t('Close')}
+			</button>
+		</div>
+
+		<div class="overflow-y-auto p-4">
+			<div class="grid gap-2 md:grid-cols-[1.2fr_1fr_1fr_1fr]">
+				<div class="rounded-xl border border-gray-100 bg-gray-50/80 p-3 dark:border-gray-850 dark:bg-gray-900/50">
+					<div class="text-xs text-gray-500 dark:text-gray-400">{$i18n.t('Total Tokens')}</div>
+					<div class="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
+						{formatTokenCount(totals.total)}
+					</div>
+				</div>
+				<div class="rounded-xl border border-gray-100 bg-gray-50/80 p-3 dark:border-gray-850 dark:bg-gray-900/50">
+					<div class="text-xs text-gray-500 dark:text-gray-400">{$i18n.t('Input Tokens')}</div>
+					<div class="mt-1 text-2xl font-semibold text-sky-600 dark:text-sky-300">
+						{formatTokenCount(totals.input)}
+					</div>
+				</div>
+				<div class="rounded-xl border border-gray-100 bg-gray-50/80 p-3 dark:border-gray-850 dark:bg-gray-900/50">
+					<div class="text-xs text-gray-500 dark:text-gray-400">{$i18n.t('Output Tokens')}</div>
+					<div class="mt-1 text-2xl font-semibold text-emerald-600 dark:text-emerald-300">
+						{formatTokenCount(totals.output)}
+					</div>
+				</div>
+				<div class="rounded-xl border border-gray-100 bg-gray-50/80 p-3 dark:border-gray-850 dark:bg-gray-900/50">
+					<div class="text-xs text-gray-500 dark:text-gray-400">{$i18n.t('Events')}</div>
+					<div class="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
+						{filteredRecords.length}
+					</div>
+				</div>
+			</div>
+
+			<div class="mt-4 grid gap-2 lg:grid-cols-[1.1fr_1fr]">
+				<div class="rounded-xl border border-gray-100 bg-white/80 p-3 dark:border-gray-850 dark:bg-gray-900/40">
+					<div class="flex flex-wrap items-center gap-2">
+						<select bind:value={range} class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm dark:border-gray-800 dark:bg-gray-950">
+							<option value="today">{$i18n.t('Today')}</option>
+							<option value="7d">{$i18n.t('Last 7 days')}</option>
+							<option value="24h">{$i18n.t('Last 24 hours')}</option>
+							<option value="1h">{$i18n.t('Last 1 hour')}</option>
+							<option value="custom">{$i18n.t('Custom')}</option>
+						</select>
+						{#if range === 'custom'}
+							<input type="date" bind:value={customStart} class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm dark:border-gray-800 dark:bg-gray-950" />
+							<input type="date" bind:value={customEnd} class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm dark:border-gray-800 dark:bg-gray-950" />
+						{/if}
+						<select bind:value={modelFilter} class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm dark:border-gray-800 dark:bg-gray-950">
+							<option value="all">{$i18n.t('All models')}</option>
+							{#each models as model}
+								<option value={model}>{model}</option>
+							{/each}
+						</select>
+						<select bind:value={counterFilter} class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm dark:border-gray-800 dark:bg-gray-950">
+							<option value="all">{$i18n.t('All counters')}</option>
+							{#each $tokenUsageCustomCounters as counter}
+								<option value={counter.id}>{counter.name}</option>
+							{/each}
+						</select>
+					</div>
+
+					<div class="mt-4 flex h-56 items-stretch gap-1 rounded-xl bg-gray-50 p-2 dark:bg-gray-950/60">
+						{#each buckets as bucket}
+							{@const barHeight = bucket.total > 0 ? Math.max(8, (bucket.total / maxBucket) * 100) : 0}
+							{@const inputHeight = bucket.total > 0 ? (bucket.input / bucket.total) * 100 : 0}
+							{@const outputHeight = bucket.total > 0 ? (bucket.output / bucket.total) * 100 : 0}
+							<div class="flex min-w-0 flex-1 flex-col items-center gap-1">
+								<div class="flex min-h-0 w-full flex-1 items-end">
+									<div
+										class="flex w-full flex-col overflow-hidden rounded-t bg-gray-200/80 dark:bg-gray-800"
+										style={`height: ${barHeight}%;`}
+										title={`${bucket.label}: ${formatTokenCount(bucket.total)} total, ${formatTokenCount(bucket.input)} input, ${formatTokenCount(bucket.output)} output`}
+									>
+										<div class="w-full bg-emerald-500/80" style={`height: ${outputHeight}%;`}></div>
+										<div class="w-full bg-sky-500/80" style={`height: ${inputHeight}%;`}></div>
+									</div>
+								</div>
+								<div class="w-full truncate text-center text-[10px] text-gray-400">{bucket.label}</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+
+				<div class="grid gap-2">
+					<div class="rounded-xl border border-gray-100 bg-white/80 p-3 dark:border-gray-850 dark:bg-gray-900/40">
+						<div class="mb-2 text-sm font-medium">{$i18n.t('Model Usage')}</div>
+						{#each modelGroups.slice(0, 6) as item}
+							<div class="mb-3">
+								<div class="flex justify-between gap-3 text-xs font-medium">
+									<span class="truncate text-gray-900 dark:text-gray-100">{item.name}</span>
+									<span>{formatTokenCount(item.total)}</span>
+								</div>
+								<div class="mt-1 grid grid-cols-3 gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+									<div>{$i18n.t('Input')}: <span class="text-sky-600 dark:text-sky-300">{formatTokenCount(item.input)}</span></div>
+									<div>{$i18n.t('Output')}: <span class="text-emerald-600 dark:text-emerald-300">{formatTokenCount(item.output)}</span></div>
+									<div>{$i18n.t('Total')}: {formatTokenCount(item.total)}</div>
+								</div>
+								<div class="mt-1 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+									<div class="flex h-full rounded-full" style={`width: ${(item.total / Math.max(totals.total, 1)) * 100}%`}>
+										<div class="h-full bg-sky-500" style={`width: ${(item.input / Math.max(item.total, 1)) * 100}%`}></div>
+										<div class="h-full flex-1 bg-emerald-500"></div>
+									</div>
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+			</div>
+
+			<div class="mt-4 grid gap-2 lg:grid-cols-[1fr_1fr]">
+				<div class="rounded-xl border border-gray-100 bg-white/80 p-3 dark:border-gray-850 dark:bg-gray-900/40">
+					<div class="mb-2 flex items-center justify-between gap-3">
+						<div class="text-sm font-medium">{$i18n.t('Custom Counters')}</div>
+						<div class="flex gap-1">
+							<input
+								bind:value={newCounterName}
+								class="w-36 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs dark:border-gray-800 dark:bg-gray-950"
+								placeholder={$i18n.t('Counter name')}
+							/>
+							<button type="button" class="rounded-lg bg-gray-900 px-2 py-1 text-xs text-white dark:bg-gray-100 dark:text-gray-900" on:click={createCounter}>
+								{$i18n.t('Add')}
+							</button>
+						</div>
+					</div>
+					{#each $tokenUsageCustomCounters as counter}
+						{@const counterRecords = filteredRecords.filter((record) => counterApplies(counter, record))}
+						{@const counterTotals = totalsFor(counterRecords)}
+						{@const counterBuckets = buildBuckets(counterRecords)}
+						{@const counterMaxBucket = Math.max(...counterBuckets.map((bucket) => bucket.total), 1)}
+						{@const counterModels = groupBy(counterRecords, 'model')}
+						<div class="mb-2 rounded-lg border border-gray-100 p-2 dark:border-gray-850">
+							<div class="flex items-center justify-between gap-2">
+								{#if editingCounterId === counter.id}
+									<input bind:value={editingCounterName} class="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs dark:border-gray-800 dark:bg-gray-950" />
+									<button
+										type="button"
+										class="text-xs text-sky-600"
+										on:click={() => {
+											renameCustomTokenCounter(counter.id, editingCounterName);
+											editingCounterId = null;
+										}}
+									>
+										{$i18n.t('Save')}
+									</button>
+								{:else}
+									<div class="min-w-0 flex-1 truncate text-sm">{counter.name}</div>
+									<div class="text-xs font-medium">{formatTokenCount(counterTotals.total)}</div>
+								{/if}
+							</div>
+							<div class="mt-2 grid grid-cols-3 gap-1 text-xs">
+								<div class="rounded-lg bg-sky-50 px-2 py-1 text-sky-700 dark:bg-sky-400/10 dark:text-sky-200">
+									<div class="text-[10px] opacity-70">{$i18n.t('Input')}</div>
+									<div class="font-semibold">{formatTokenCount(counterTotals.input)}</div>
+								</div>
+								<div class="rounded-lg bg-emerald-50 px-2 py-1 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200">
+									<div class="text-[10px] opacity-70">{$i18n.t('Output')}</div>
+									<div class="font-semibold">{formatTokenCount(counterTotals.output)}</div>
+								</div>
+								<div class="rounded-lg bg-gray-100 px-2 py-1 text-gray-700 dark:bg-gray-850 dark:text-gray-200">
+									<div class="text-[10px] opacity-70">{$i18n.t('Total')}</div>
+									<div class="font-semibold">{formatTokenCount(counterTotals.total)}</div>
+								</div>
+							</div>
+							<div class="mt-2 flex h-14 items-end gap-0.5 rounded-lg bg-gray-50 p-1 dark:bg-gray-950/60">
+								{#each counterBuckets as bucket}
+									{@const counterBarHeight = bucket.total > 0 ? Math.max(4, (bucket.total / counterMaxBucket) * 100) : 0}
+									<div
+										class="flex-1 rounded-t bg-sky-500/70"
+										style={`height: ${counterBarHeight}%;`}
+										title={`${bucket.label}: ${formatTokenCount(bucket.total)}`}
+									></div>
+								{/each}
+							</div>
+							<div class="mt-2">
+								<div class="mb-1 text-[10px] font-medium uppercase text-gray-500">{$i18n.t('Models')}</div>
+								{#each counterModels.slice(0, 6) as item}
+									<div class="mb-2 rounded-lg bg-gray-50 px-2 py-1 dark:bg-gray-950/60">
+										<div class="flex justify-between gap-2 text-[11px] font-medium">
+											<span class="truncate">{item.name}</span>
+											<span>{formatTokenCount(item.total)}</span>
+										</div>
+										<div class="mt-1 grid grid-cols-3 gap-1 text-[10px] text-gray-500">
+											<div>{$i18n.t('Input')}: <span class="text-sky-600 dark:text-sky-300">{formatTokenCount(item.input)}</span></div>
+											<div>{$i18n.t('Output')}: <span class="text-emerald-600 dark:text-emerald-300">{formatTokenCount(item.output)}</span></div>
+											<div>{$i18n.t('Total')}: {formatTokenCount(item.total)}</div>
+										</div>
+									</div>
+								{/each}
+							</div>
+							<div class="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
+								<button type="button" on:click={() => { editingCounterId = counter.id; editingCounterName = counter.name; }}>{$i18n.t('Rename')}</button>
+								<button type="button" on:click={() => resetCustomTokenCounter(counter.id)}>{$i18n.t('Reset')}</button>
+								<button type="button" class="text-red-600" on:click={() => deleteCustomTokenCounter(counter.id)}>{$i18n.t('Delete')}</button>
+							</div>
+						</div>
+					{/each}
+				</div>
+
+				<div class="rounded-xl border border-gray-100 bg-white/80 p-3 dark:border-gray-850 dark:bg-gray-900/40">
+					<div class="mb-2 text-sm font-medium">{$i18n.t('Reset')}</div>
+					<div class="grid gap-2 sm:grid-cols-2">
+						<button type="button" class="rounded-lg border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900" on:click={resetFiltered}>
+							{$i18n.t('Reset filtered data')}
+						</button>
+						<button type="button" class="rounded-lg border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900" disabled={modelFilter === 'all'} on:click={resetModel}>
+							{$i18n.t('Reset model')}
+						</button>
+						<button type="button" class="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:hover:bg-red-950/30" on:click={() => resetTokenUsageRecords()}>
+							{$i18n.t('Full reset')}
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
