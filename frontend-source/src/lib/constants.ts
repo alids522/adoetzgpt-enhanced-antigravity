@@ -9,7 +9,23 @@ const DEV_WEBUI_BASE_URL =
 		: `http://${location.hostname}:8080`;
 
 export const WEBUI_HOSTNAME = browser ? (dev ? location.hostname : ``) : '';
-export const WEBUI_BASE_URL = browser ? (dev ? DEV_WEBUI_BASE_URL : ``) : ``;
+
+let capacitorBaseUrl = '';
+if (browser) {
+	const isCapacitor = !!(window as any)?.Capacitor;
+	if (isCapacitor) {
+		capacitorBaseUrl = localStorage.getItem('WEBUI_BASE_URL') || '';
+		if (!capacitorBaseUrl) {
+			capacitorBaseUrl = prompt('Backend Required\n\nPlease enter your OpenWebUI Backend URL\n(e.g., http://192.168.1.100:8080 or https://your-domain.com):') || '';
+			if (capacitorBaseUrl) {
+				capacitorBaseUrl = capacitorBaseUrl.replace(/\/+$/, ''); // Remove trailing slash
+				localStorage.setItem('WEBUI_BASE_URL', capacitorBaseUrl);
+			}
+		}
+	}
+}
+
+export const WEBUI_BASE_URL = browser ? ((window as any)?.Capacitor ? capacitorBaseUrl : (dev ? DEV_WEBUI_BASE_URL : ``)) : ``;
 export const WEBUI_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1`;
 
 export const OLLAMA_API_BASE_URL = `${WEBUI_BASE_URL}/ollama`;
