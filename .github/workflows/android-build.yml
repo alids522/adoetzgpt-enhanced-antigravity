@@ -34,7 +34,8 @@ jobs:
           npm ci
           npm run build
           cd ..
-          cp -r open-webui/build www
+          mkdir -p www
+          cp -r open-webui/build/* www/
 
       - name: Setup Java JDK
         uses: actions/setup-java@v4
